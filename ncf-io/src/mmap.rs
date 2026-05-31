@@ -4,6 +4,8 @@ use ncf_core::index::NcfIndex;
 use ncf_core::schema::TensorSchema;
 use ncf_core::constants::*;
 use ncf_core::Result;
+use libc::{c_void, madvise, MADV_WILLNEED};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Cursor, ErrorKind};
 use std::path::Path;
@@ -21,6 +23,8 @@ pub struct NcfMmap {
     schema_range: std::ops::Range<usize>,
     /// Parsed index information.
     pub index: NcfIndex,
+    /// Auxiliary map from chunk_id -> index in `entries` for O(1) lookup.
+    chunk_map: HashMap<u64, usize>,
 }
 
 impl NcfMmap {
@@ -103,6 +107,12 @@ impl NcfMmap {
             Cursor::new(&mmap[index_start..index_end])
         )?;
         
+        // build chunk_map for fast chunk id -> entry lookup
+        let mut chunk_map = HashMap::with_capacity(index.entries.len());
+        for (i, e) in index.entries.iter().enumerate() {
+            chunk_map.insert(e.chunk_id, i);
+        }
+
         Ok(Self {
             mmap,
             header_prefix,
@@ -110,6 +120,7 @@ impl NcfMmap {
             schemas: OnceLock::new(),
             schema_range,
             index,
+            chunk_map,
         })
     }
 
@@ -129,11 +140,11 @@ impl NcfMmap {
     /// Return a zero-copy slice of the tensor payload for the given name.
     pub fn tensor_slice(&self, name: &str) -> Option<&[u8]> {
         let chunk_id = self.index.tensor_map.get(name)?;
-        let entry = self.index.entries.iter().find(|entry| &entry.chunk_id == chunk_id)?;
+        let idx = *self.chunk_map.get(chunk_id)?;
+        let entry = &self.index.entries[idx];
         
         // Bounds check: chunk offset is within file
-        let offset_start = (entry.byte_offset as usize)
-            .checked_add(CHUNK_HEADER_SIZE as usize)?;
+        let offset_start = (entry.byte_offset as usize).checked_add(CHUNK_HEADER_SIZE as usize)?;
         if offset_start > self.mmap.len() {
             return None;
         }
@@ -154,6 +165,45 @@ impl NcfMmap {
             return None;
         }
         
+        // Advise the kernel to prefetch the region to reduce page faults
+        if offset_end > offset_start {
+            unsafe {
+                let len = offset_end - offset_start;
+                let ptr = self.mmap.as_ptr().add(offset_start) as *mut c_void;
+                let _ = madvise(ptr, len, MADV_WILLNEED);
+            }
+        }
+
         Some(&self.mmap[offset_start..offset_end])
+    }
+
+    /// Verify all chunk payload checksums once. This computes Blake3 over each
+    /// payload and compares against the checksum recorded in the schema chunk
+    /// references. This is intentionally an explicit method (not automatic).
+    pub fn verify_all_checksums(&self) -> Result<()> {
+        let schemas = self.schemas()?;
+        for s in schemas.iter() {
+            for c in s.chunks.iter() {
+                let idx = match self.chunk_map.get(&c.chunk_id) {
+                    Some(i) => *i,
+                    None => continue,
+                };
+                let entry = &self.index.entries[idx];
+                let offset_start = (entry.byte_offset as usize).checked_add(CHUNK_HEADER_SIZE as usize)
+                    .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidData, "chunk offset overflow"))?;
+                let data_len = (entry.byte_len as usize).saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
+                let offset_end = offset_start.checked_add(data_len)
+                    .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidData, "chunk data size overflow"))?;
+                if offset_end > self.mmap.len() {
+                    return Err(std::io::Error::new(ErrorKind::InvalidData, "chunk data out of bounds").into());
+                }
+                let payload = &self.mmap[offset_start..offset_end];
+                let hash = blake3::hash(payload);
+                if hash.as_bytes() != &c.checksum {
+                    return Err(std::io::Error::new(ErrorKind::InvalidData, "checksum mismatch").into());
+                }
+            }
+        }
+        Ok(())
     }
 }
