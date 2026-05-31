@@ -3,29 +3,29 @@
 
 /// Chunk-level structures and helpers.
 pub mod chunk;
+/// Deduplication helpers for tensor chunk storage.
+pub mod dedup;
 /// Header encoding/decoding utilities and types.
 pub mod header;
 /// Index block representation and helpers.
 pub mod index;
-/// Tensor schemas and related enums.
-pub mod schema;
+/// KV delta encoding utilities for context window expansion.
+pub mod kv_delta;
 /// Layout helpers for tensor alignment and SIMD-friendly payloads.
 pub mod layout;
 /// Adaptive quantization helpers used during NCF generation.
 pub mod quantize;
-/// Deduplication helpers for tensor chunk storage.
-pub mod dedup;
-/// KV delta encoding utilities for context window expansion.
-pub mod kv_delta;
+/// Tensor schemas and related enums.
+pub mod schema;
 
 pub use chunk::*;
+pub use dedup::*;
 pub use header::*;
 pub use index::*;
-pub use schema::*;
+pub use kv_delta::*;
 pub use layout::*;
 pub use quantize::*;
-pub use dedup::*;
-pub use kv_delta::*;
+pub use schema::*;
 
 /// NCF Format Structure Constants
 ///

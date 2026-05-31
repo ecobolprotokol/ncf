@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use ncf_core::header::{FileHeaderPrefix, NcfHeader, Metadata};
+use ncf_core::header::{FileHeaderPrefix, Metadata, NcfHeader};
 use ncf_core::index::NcfIndex;
 use std::io::Cursor;
 

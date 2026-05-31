@@ -104,6 +104,23 @@ pub enum Encoding {
     DictionaryRLE,
 }
 
+impl DType {
+    /// Return the quantization bit-width associated with this dtype, if any.
+    pub fn quant_bit_width(&self) -> Option<usize> {
+        match self {
+            DType::Q8_0 => Some(8),
+            DType::Q4_0 | DType::Q4K => Some(4),
+            DType::Custom(2) => Some(2),
+            _ => None,
+        }
+    }
+
+    /// Whether this dtype is a quantized representation.
+    pub fn is_quantized(&self) -> bool {
+        self.quant_bit_width().is_some()
+    }
+}
+
 impl fmt::Display for DType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

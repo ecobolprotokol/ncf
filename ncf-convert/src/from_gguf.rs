@@ -1,5 +1,5 @@
 use anyhow::Context;
-use ncf_core::header::{Metadata, NcfHeader, NcfFlags};
+use ncf_core::header::{Metadata, NcfFlags, NcfHeader};
 use ncf_core::schema::{Compression, DType, Encoding, Layout, TensorSchema};
 use ncf_io::NcfWriter;
 use std::collections::BTreeMap;
@@ -30,19 +30,32 @@ fn gguf_type_to_dtype(tensor_type: gguf::GGMLType) -> DType {
     }
 }
 
-pub fn gguf_to_ncf<P: AsRef<Path>>(input: P, output: P, architecture: Option<&str>, author: Option<&str>) -> anyhow::Result<()> {
-    let mut file = File::open(&input).with_context(|| format!("opening GGUF file {}", input.as_ref().display()))?;
+pub fn gguf_to_ncf<P: AsRef<Path>>(
+    input: P,
+    output: P,
+    architecture: Option<&str>,
+    author: Option<&str>,
+) -> anyhow::Result<()> {
+    let mut file = File::open(&input)
+        .with_context(|| format!("opening GGUF file {}", input.as_ref().display()))?;
     let mut data = Vec::new();
     file.read_to_end(&mut data)?;
     let archive = gguf::GGUFFile::read(&data)
         .map_err(|err| anyhow::anyhow!("failed to parse GGUF file: {}", err))?
         .context("failed to parse GGUF file")?;
 
-    let arch = architecture.map(|s| s.to_string()).unwrap_or_else(|| "gguf-converted".to_string());
+    let arch = architecture
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "gguf-converted".to_string());
     let mut writer = NcfWriter::new(
         NcfHeader {
             metadata: Metadata {
-                model_name: input.as_ref().file_name().unwrap_or_default().to_string_lossy().into_owned(),
+                model_name: input
+                    .as_ref()
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
                 architecture: arch,
                 created_at: chrono::Utc::now().timestamp() as u64,
                 author: author.map(|s| s.to_string()),

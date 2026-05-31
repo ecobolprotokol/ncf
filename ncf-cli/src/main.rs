@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use ncf_convert::{gguf_to_ncf, safetensors_to_ncf};
-use ncf_core::header::{Metadata, NcfHeader, NcfFlags};
+use ncf_core::header::{Metadata, NcfFlags, NcfHeader};
 use ncf_core::schema::{Compression, DType, Encoding, Layout, TensorSchema};
 use ncf_io::NcfWriter;
 use std::collections::BTreeMap;
@@ -71,9 +71,15 @@ fn main() -> anyhow::Result<()> {
             println!("Index offset: {}", prefix.index_offset);
             println!("Chunk count: {}", prefix.chunk_count);
         }
-        Commands::Create { input, output, name } => {
+        Commands::Create {
+            input,
+            output,
+            name,
+        } => {
             let bytes = fs::read(&input)?;
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs();
             let metadata = NcfHeader {
                 metadata: Metadata {
                     model_name: name.clone(),
@@ -99,11 +105,21 @@ fn main() -> anyhow::Result<()> {
             writer.finalize(output)?;
             println!("Created NCF file from {}", input.display());
         }
-        Commands::ConvertSafetensors { input, output, architecture, author } => {
+        Commands::ConvertSafetensors {
+            input,
+            output,
+            architecture,
+            author,
+        } => {
             safetensors_to_ncf(input, output, architecture.as_deref(), author.as_deref())?;
             println!("Converted safetensors to NCF.");
         }
-        Commands::ConvertGguf { input, output, architecture, author } => {
+        Commands::ConvertGguf {
+            input,
+            output,
+            architecture,
+            author,
+        } => {
             gguf_to_ncf(input, output, architecture.as_deref(), author.as_deref())?;
             println!("Converted GGUF to NCF.");
         }

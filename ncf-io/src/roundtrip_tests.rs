@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod round_trip_tests {
-    use ncf_core::header::{Metadata, NcfHeader, NcfFlags};
-    use ncf_core::schema::{Compression, DType, Encoding, Layout, TensorSchema};
     use crate::{NcfReader, NcfWriter};
+    use ncf_core::header::{Metadata, NcfFlags, NcfHeader};
+    use ncf_core::schema::{Compression, DType, Encoding, Layout, TensorSchema};
     use std::fs;
     use tempfile::TempDir;
 
@@ -118,14 +118,15 @@ mod round_trip_tests {
             };
 
             writer.add_tensor(schema, test_data.clone());
-            writer.finalize(&file_path).expect("Failed to finalize NCF file");
+            writer
+                .finalize(&file_path)
+                .expect("Failed to finalize NCF file");
         }
 
         // Read back and verify
         {
-            let reader = NcfReader::open(&file_path)
-                .expect("Failed to open NCF file");
-            
+            let reader = NcfReader::open(&file_path).expect("Failed to open NCF file");
+
             let tensor_name = format!("tensor_{}", dtype);
             let read_data = reader
                 .read_tensor(&tensor_name)
@@ -186,13 +187,14 @@ mod round_trip_tests {
                 writer.add_tensor(schema, test_data);
             }
 
-            writer.finalize(&file_path).expect("Failed to finalize NCF file");
+            writer
+                .finalize(&file_path)
+                .expect("Failed to finalize NCF file");
         }
 
         // Read back and verify each tensor
         {
-            let reader = NcfReader::open(&file_path)
-                .expect("Failed to open NCF file");
+            let reader = NcfReader::open(&file_path).expect("Failed to open NCF file");
 
             for i in 0..tensor_count {
                 let tensor_name = format!("tensor_{}_{}", i, dtype);
@@ -337,11 +339,12 @@ mod round_trip_tests {
             writer.add_tensor(schema, test_data);
         }
 
-        writer.finalize(&file_path).expect("Failed to finalize NCF file");
+        writer
+            .finalize(&file_path)
+            .expect("Failed to finalize NCF file");
 
         // Verify read back
-        let reader = NcfReader::open(&file_path)
-            .expect("Failed to open NCF file");
+        let reader = NcfReader::open(&file_path).expect("Failed to open NCF file");
 
         for (idx, dtype) in dtypes.iter().enumerate() {
             let tensor_name = format!("tensor_{}", idx);

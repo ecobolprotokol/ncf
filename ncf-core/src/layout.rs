@@ -20,8 +20,7 @@ impl AlignedVec {
             };
         }
 
-        let layout = Layout::from_size_align(len, 64)
-            .expect("failed to create aligned layout");
+        let layout = Layout::from_size_align(len, 64).expect("failed to create aligned layout");
         let raw_ptr = unsafe { alloc(layout) };
         let ptr = NonNull::new(raw_ptr).expect("allocation failed");
         unsafe {
@@ -53,8 +52,8 @@ impl AlignedVec {
 impl Drop for AlignedVec {
     fn drop(&mut self) {
         if self.cap > 0 {
-            let layout = Layout::from_size_align(self.cap, 64)
-                .expect("failed to create aligned layout");
+            let layout =
+                Layout::from_size_align(self.cap, 64).expect("failed to create aligned layout");
             unsafe { dealloc(self.ptr.as_ptr(), layout) }
         }
     }

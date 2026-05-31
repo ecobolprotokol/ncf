@@ -2,7 +2,7 @@ use ciborium::ser::into_writer;
 use ncf_core::chunk::ChunkHeader;
 use ncf_core::constants::*;
 use ncf_core::dedup::DedupCache;
-use ncf_core::header::{FileHeaderPrefix, NCF_MAGIC, NcfHeader, NcfFlags};
+use ncf_core::header::{FileHeaderPrefix, NcfFlags, NcfHeader, NCF_MAGIC};
 use ncf_core::index::{IndexEntry, NcfIndex};
 use ncf_core::quantize::QuantLevel;
 use ncf_core::schema::{ChunkRef, Compression, TensorSchema};
@@ -71,14 +71,19 @@ impl NcfWriter {
 
         for (tensor, payload) in &self.tensors {
             let raw = payload.clone();
-            let chunk_offset = 48 + header_len + schema_bytes.len() as u64 + chunk_data.len() as u64;
+            let chunk_offset =
+                48 + header_len + schema_bytes.len() as u64 + chunk_data.len() as u64;
             let duplicate_offset = dedup.get_canonical_offset(&raw);
             let checksum = blake3::hash(&raw);
 
             if duplicate_offset.is_none() {
                 let chunk_header = ChunkHeader {
                     chunk_id,
-                    flags: if tensor.compression != Compression::None { 1 } else { 0 },
+                    flags: if tensor.compression != Compression::None {
+                        1
+                    } else {
+                        0
+                    },
                     uncompressed_len: raw.len() as u64,
                     compressed_len: raw.len() as u64,
                 };
@@ -128,14 +133,19 @@ impl NcfWriter {
             }
             for (tensor, payload) in &self.tensors {
                 let raw = payload.clone();
-                let chunk_offset = 48 + header_len + schema_bytes.len() as u64 + chunk_data.len() as u64;
+                let chunk_offset =
+                    48 + header_len + schema_bytes.len() as u64 + chunk_data.len() as u64;
                 let duplicate_offset = dedup.get_canonical_offset(&raw);
                 let checksum = blake3::hash(&raw);
 
                 if duplicate_offset.is_none() {
                     let chunk_header = ChunkHeader {
                         chunk_id,
-                        flags: if tensor.compression != Compression::None { 1 } else { 0 },
+                        flags: if tensor.compression != Compression::None {
+                            1
+                        } else {
+                            0
+                        },
                         uncompressed_len: raw.len() as u64,
                         compressed_len: raw.len() as u64,
                     };
@@ -192,14 +202,23 @@ impl NcfWriter {
         }
 
         let schema_offset = 48 + header_len;
-        let index_offset = 48 + header_len + final_schema_bytes.len() as u64 + chunk_data.len() as u64;
-        let index = NcfIndex::with_quant_levels(index_entries, tensor_map, self.tensor_quant_levels.clone());
+        let index_offset =
+            48 + header_len + final_schema_bytes.len() as u64 + chunk_data.len() as u64;
+        let index = NcfIndex::with_quant_levels(
+            index_entries,
+            tensor_map,
+            self.tensor_quant_levels.clone(),
+        );
         let mut index_bytes = Vec::new();
         into_writer(&index, &mut index_bytes)?;
         let footer_len = (index_bytes.len() as u64).to_le_bytes();
 
         let mut buffer = Vec::with_capacity(
-            48 + header_len as usize + final_schema_bytes.len() + chunk_data.len() + index_bytes.len() + 16,
+            48 + header_len as usize
+                + final_schema_bytes.len()
+                + chunk_data.len()
+                + index_bytes.len()
+                + 16,
         );
         let header_prefix = FileHeaderPrefix {
             magic: *NCF_MAGIC,

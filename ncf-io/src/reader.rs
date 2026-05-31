@@ -1,10 +1,12 @@
-use memmap2::Mmap;
 use crate::prefetch::PrefetchReader;
+use libc::{c_void, madvise, MADV_WILLNEED};
+use memmap2::Mmap;
+use ncf_core::constants::*;
 use ncf_core::header::{FileHeaderPrefix, NcfHeader};
 use ncf_core::index::IndexEntry;
 use ncf_core::schema::TensorSchema;
-use ncf_core::constants::*;
 use ncf_core::Result;
+use once_cell::sync::Lazy;
 use once_cell::sync::OnceCell;
 use self_cell::self_cell;
 use serde::Deserialize;
@@ -14,8 +16,6 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::ErrorKind;
 use std::path::Path;
-use libc::{c_void, madvise, MADV_WILLNEED};
-use once_cell::sync::Lazy;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -41,7 +41,10 @@ pub struct ReaderOptions {
 
 impl Default for ReaderOptions {
     fn default() -> Self {
-        Self { prefetch: false, verify_on_open: false }
+        Self {
+            prefetch: false,
+            verify_on_open: false,
+        }
     }
 }
 
@@ -160,7 +163,8 @@ struct CachedHeader {
     schemas: OnceCell<std::result::Result<Vec<TensorSchema>, String>>,
 }
 
-static PARSED_HEADER_CACHE: Lazy<Mutex<HashMap<PathBuf, CachedHeader>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static PARSED_HEADER_CACHE: Lazy<Mutex<HashMap<PathBuf, CachedHeader>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 impl NcfReader {
     /// Open an NCF file and return a reader providing borrowed access.
@@ -171,8 +175,13 @@ impl NcfReader {
         if (mmap.len() as u64) < FILE_HEADER_PREFIX_SIZE {
             return Err(std::io::Error::new(
                 ErrorKind::UnexpectedEof,
-                format!("file too small: {} bytes, need at least {}", mmap.len(), FILE_HEADER_PREFIX_SIZE)
-            ).into());
+                format!(
+                    "file too small: {} bytes, need at least {}",
+                    mmap.len(),
+                    FILE_HEADER_PREFIX_SIZE
+                ),
+            )
+            .into());
         }
 
         let reader = Self::try_new(mmap, |mmap| {
@@ -204,15 +213,23 @@ impl NcfReader {
             let (header_prefix, metadata) = if let Some((hp, md)) = use_cached {
                 (hp, md)
             } else {
-                let header_prefix = FileHeaderPrefix::decode(&mmap[..FILE_HEADER_PREFIX_SIZE as usize])
-                    .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+                let header_prefix =
+                    FileHeaderPrefix::decode(&mmap[..FILE_HEADER_PREFIX_SIZE as usize])
+                        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
                 let header_start = FILE_HEADER_PREFIX_SIZE as usize;
-                let header_end = header_start.checked_add(header_prefix.header_len as usize)
-                    .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidData, "header size overflow"))?;
+                let header_end = header_start
+                    .checked_add(header_prefix.header_len as usize)
+                    .ok_or_else(|| {
+                        std::io::Error::new(ErrorKind::InvalidData, "header size overflow")
+                    })?;
                 if header_end > mmap.len() {
                     return Err(std::io::Error::new(
                         ErrorKind::InvalidData,
-                        format!("header block out of bounds: end={}, file_size={}", header_end, mmap.len())
+                        format!(
+                            "header block out of bounds: end={}, file_size={}",
+                            header_end,
+                            mmap.len()
+                        ),
                     ));
                 }
                 let metadata = NcfHeader::decode_cbor(&mmap[header_start..header_end])
@@ -220,7 +237,15 @@ impl NcfReader {
 
                 // store in cache (best-effort) with empty OnceCell for schemas
                 if let Ok(mut cache_guard) = PARSED_HEADER_CACHE.lock() {
-                    cache_guard.insert(key_path.clone(), CachedHeader { header_prefix: header_prefix.clone(), metadata: metadata.clone(), file_size, schemas: OnceCell::new() });
+                    cache_guard.insert(
+                        key_path.clone(),
+                        CachedHeader {
+                            header_prefix: header_prefix.clone(),
+                            metadata: metadata.clone(),
+                            file_size,
+                            schemas: OnceCell::new(),
+                        },
+                    );
                 }
 
                 (header_prefix, metadata)
@@ -231,13 +256,18 @@ impl NcfReader {
             if schema_start > schema_end || schema_end > mmap.len() {
                 return Err(std::io::Error::new(
                     ErrorKind::InvalidData,
-                    format!("schema block out of bounds: start={}, end={}, file_size={}", 
-                        schema_start, schema_end, mmap.len())
+                    format!(
+                        "schema block out of bounds: start={}, end={}, file_size={}",
+                        schema_start,
+                        schema_end,
+                        mmap.len()
+                    ),
                 ));
             }
             let schema_range = schema_start..schema_end;
             // Prepare schemas OnceCell and populate from cache if available.
-            let schemas_cell: OnceCell<std::result::Result<Vec<TensorSchema>, String>> = OnceCell::new();
+            let schemas_cell: OnceCell<std::result::Result<Vec<TensorSchema>, String>> =
+                OnceCell::new();
             if let Some(sch) = cached_schemas {
                 let _ = schemas_cell.set(sch);
             }
@@ -246,31 +276,37 @@ impl NcfReader {
             if mmap.len() < FOOTER_SIZE {
                 return Err(std::io::Error::new(
                     ErrorKind::InvalidData,
-                    "file too small to contain footer"
+                    "file too small to contain footer",
                 ));
             }
-            
+
             let footer_position = mmap.len() - FOOTER_SIZE;
             let footer_magic = &mmap[footer_position..footer_position + 8];
             if footer_magic != b"NCFEND!!" {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "missing or invalid footer magic"
+                    "missing or invalid footer magic",
                 ));
             }
 
             let footer_len_bytes: [u8; 8] = mmap[footer_position + 8..footer_position + 16]
                 .try_into()
-                .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid footer length"))?;
+                .map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid footer length")
+                })?;
             let index_len = u64::from_le_bytes(footer_len_bytes) as usize;
             let index_start = header_prefix.index_offset as usize;
-            let index_end = index_start.checked_add(index_len)
-                .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidData, "index size overflow"))?;
-            
+            let index_end = index_start.checked_add(index_len).ok_or_else(|| {
+                std::io::Error::new(ErrorKind::InvalidData, "index size overflow")
+            })?;
+
             if index_end > footer_position {
                 return Err(std::io::Error::new(
                     ErrorKind::InvalidData,
-                    format!("index block overlaps footer: end={}, footer_pos={}", index_end, footer_position)
+                    format!(
+                        "index block overlaps footer: end={}, footer_pos={}",
+                        index_end, footer_position
+                    ),
                 ));
             }
 
@@ -320,8 +356,14 @@ impl NcfReader {
     /// Print basic info about the NCF file to stdout (for debugging).
     pub fn inspect(&self) -> Result<()> {
         let schemas = self.schemas()?;
-        println!("Model: {}", self.borrow_dependent().metadata.metadata.model_name);
-        println!("Architecture: {}", self.borrow_dependent().metadata.metadata.architecture);
+        println!(
+            "Model: {}",
+            self.borrow_dependent().metadata.metadata.model_name
+        );
+        println!(
+            "Architecture: {}",
+            self.borrow_dependent().metadata.metadata.architecture
+        );
         println!("Tensors: {}", schemas.len());
         for tensor in schemas.iter() {
             println!(" - {} {} {:?}", tensor.name, tensor.dtype, tensor.shape);
@@ -351,8 +393,7 @@ impl NcfReader {
         let entry = &self.borrow_dependent().index.entries[idx];
         let data = self.borrow_owner();
 
-        let offset_start = (entry.byte_offset as usize)
-            .checked_add(CHUNK_HEADER_SIZE as usize)?;
+        let offset_start = (entry.byte_offset as usize).checked_add(CHUNK_HEADER_SIZE as usize)?;
         if offset_start > data.len() {
             return None;
         }
@@ -423,7 +464,7 @@ impl NcfReader {
 
         let data = self.borrow_owner();
         let mut result = Vec::new();
-        
+
         for chunk in &schema.chunks {
             // Bounds check: chunk offset is within file
             let offset_start = (chunk.byte_offset as usize)
@@ -431,43 +472,80 @@ impl NcfReader {
                 .ok_or_else(|| {
                     std::io::Error::new(ErrorKind::InvalidData, "chunk offset overflow")
                 })?;
-            
+
             if offset_start > data.len() {
                 return Err(std::io::Error::new(
                     ErrorKind::InvalidData,
-                    format!("chunk offset out of bounds: offset={}, file_size={}", offset_start, data.len())
-                ).into());
+                    format!(
+                        "chunk offset out of bounds: offset={}, file_size={}",
+                        offset_start,
+                        data.len()
+                    ),
+                )
+                .into());
             }
 
             // Calculate actual data length: total_len - header - checksum
             let chunk_total_len = chunk.byte_len as usize;
             let chunk_overhead = (CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize;
-            
+
             if chunk_total_len < chunk_overhead {
                 return Err(std::io::Error::new(
                     ErrorKind::InvalidData,
-                    format!("chunk size too small: total_len={}, overhead={}", chunk_total_len, chunk_overhead)
-                ).into());
+                    format!(
+                        "chunk size too small: total_len={}, overhead={}",
+                        chunk_total_len, chunk_overhead
+                    ),
+                )
+                .into());
             }
-            
+
             let data_len = chunk_total_len - chunk_overhead;
-            
+
             // Bounds check: slice end is within file
-            let offset_end = offset_start.checked_add(data_len)
-                .ok_or_else(|| {
-                    std::io::Error::new(ErrorKind::InvalidData, "chunk data size overflow")
-                })?;
-            
+            let offset_end = offset_start.checked_add(data_len).ok_or_else(|| {
+                std::io::Error::new(ErrorKind::InvalidData, "chunk data size overflow")
+            })?;
+
             if offset_end > data.len() {
                 return Err(std::io::Error::new(
                     ErrorKind::InvalidData,
-                    format!("chunk data out of bounds: end={}, file_size={}", offset_end, data.len())
-                ).into());
+                    format!(
+                        "chunk data out of bounds: end={}, file_size={}",
+                        offset_end,
+                        data.len()
+                    ),
+                )
+                .into());
             }
-            
+
             result.extend_from_slice(&data[offset_start..offset_end]);
         }
         Ok(Some(result))
+    }
+
+    /// Read quantized tensor values based on the tensor dtype's quantization format.
+    /// This uses a pure enum match on DType and avoids trait objects or vtable dispatch.
+    pub fn read_tensor_quantized_values(&self, name: &str) -> Result<Option<Vec<u32>>> {
+        let schema = match self.find_schema(name)? {
+            Some(schema) => schema,
+            None => return Ok(None),
+        };
+
+        if !schema.dtype.is_quantized() {
+            return Ok(None);
+        }
+
+        let slice = match self.tensor_slice(name) {
+            Some(bytes) => bytes,
+            None => return Ok(None),
+        };
+
+        let element_count = schema.shape.iter().copied().product::<u64>() as usize;
+        let quantized =
+            ncf_core::quantize::unpack_quantized_payload(schema.dtype, slice, element_count)
+                .map_err(|err| std::io::Error::new(ErrorKind::InvalidData, err))?;
+        Ok(Some(quantized))
     }
 
     /// Verify all chunk payload checksums once. This computes Blake3 over each
@@ -483,18 +561,29 @@ impl NcfReader {
                     None => continue,
                 };
                 let entry = &self.borrow_dependent().index.entries[idx];
-                let offset_start = (entry.byte_offset as usize).checked_add(CHUNK_HEADER_SIZE as usize)
-                    .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidData, "chunk offset overflow"))?;
-                let data_len = (entry.byte_len as usize).saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
-                let offset_end = offset_start.checked_add(data_len)
-                    .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidData, "chunk data size overflow"))?;
+                let offset_start = (entry.byte_offset as usize)
+                    .checked_add(CHUNK_HEADER_SIZE as usize)
+                    .ok_or_else(|| {
+                        std::io::Error::new(ErrorKind::InvalidData, "chunk offset overflow")
+                    })?;
+                let data_len = (entry.byte_len as usize)
+                    .saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
+                let offset_end = offset_start.checked_add(data_len).ok_or_else(|| {
+                    std::io::Error::new(ErrorKind::InvalidData, "chunk data size overflow")
+                })?;
                 if offset_end > data.len() {
-                    return Err(std::io::Error::new(ErrorKind::InvalidData, "chunk data out of bounds").into());
+                    return Err(std::io::Error::new(
+                        ErrorKind::InvalidData,
+                        "chunk data out of bounds",
+                    )
+                    .into());
                 }
                 let payload = &data[offset_start..offset_end];
                 let hash = blake3::hash(payload);
                 if hash.as_bytes() != &c.checksum {
-                    return Err(std::io::Error::new(ErrorKind::InvalidData, "checksum mismatch").into());
+                    return Err(
+                        std::io::Error::new(ErrorKind::InvalidData, "checksum mismatch").into(),
+                    );
                 }
             }
         }

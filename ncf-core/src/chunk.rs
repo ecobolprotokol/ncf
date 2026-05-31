@@ -29,10 +29,16 @@ impl ChunkHeader {
     /// Decode a chunk header from the given byte slice.
     pub fn decode(bytes: &[u8]) -> std::io::Result<Self> {
         if bytes.len() < 30 {
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Chunk header too short"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Chunk header too short",
+            ));
         }
         if &bytes[..4] != CHUNK_MAGIC {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid chunk magic"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid chunk magic",
+            ));
         }
         let chunk_id = u64::from_le_bytes(bytes[4..12].try_into().unwrap());
         let flags = u16::from_le_bytes(bytes[12..14].try_into().unwrap());

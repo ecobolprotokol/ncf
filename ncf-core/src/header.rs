@@ -139,7 +139,8 @@ impl FileHeaderPrefix {
             return Err(NcfError::Header("Invalid magic bytes".into()));
         }
         let version = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
-        let flags = NcfFlags::from_bits_truncate(u32::from_le_bytes(bytes[12..16].try_into().unwrap()));
+        let flags =
+            NcfFlags::from_bits_truncate(u32::from_le_bytes(bytes[12..16].try_into().unwrap()));
         let header_len = u64::from_le_bytes(bytes[16..24].try_into().unwrap());
         let schema_offset = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
         let index_offset = u64::from_le_bytes(bytes[32..40].try_into().unwrap());

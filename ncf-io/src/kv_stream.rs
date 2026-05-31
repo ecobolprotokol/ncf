@@ -1,5 +1,5 @@
-use ncf_core::Result;
 use ncf_core::kv_delta::{KvChunk, KvEncoding};
+use ncf_core::Result;
 use std::collections::{HashMap, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -33,7 +33,11 @@ impl KvStreamReader {
             if let Some(oldest) = self.lru_order.pop_front() {
                 if let Some(payload) = self.cache.remove(&oldest) {
                     let path = self.temp_dir.join(format!("ncf_kv_{}.cache", oldest));
-                    let mut file = OpenOptions::new().create(true).write(true).truncate(true).open(&path)?;
+                    let mut file = OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(&path)?;
                     file.write_all(&payload)?;
                     self.disk_index.insert(oldest, path);
                     self.current_usage = self.current_usage.saturating_sub(payload.len());
@@ -98,7 +102,9 @@ impl KvStreamReader {
             }
         }
 
-        let payload = reconstructed.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "missing full KV snapshot"))?;
+        let payload = reconstructed.ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "missing full KV snapshot")
+        })?;
         let usage = payload.len();
         self.cache.insert(target_index, payload.clone());
         self.touch(target_index);

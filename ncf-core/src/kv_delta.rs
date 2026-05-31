@@ -68,14 +68,21 @@ impl KvDeltaEncoder {
                 .collect();
             let compressed = zstd::encode_all(delta.as_slice(), 0)
                 .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?;
-            output.push(KvChunk::delta_snapshot(token_index, last_full_index, compressed));
+            output.push(KvChunk::delta_snapshot(
+                token_index,
+                last_full_index,
+                compressed,
+            ));
         }
 
         Ok(output)
     }
 
     /// Decode a delta chain back to a full payload for the requested token index.
-    pub fn decode(chain: &[KvChunk], target_index: u64) -> std::result::Result<Vec<u8>, std::io::Error> {
+    pub fn decode(
+        chain: &[KvChunk],
+        target_index: u64,
+    ) -> std::result::Result<Vec<u8>, std::io::Error> {
         let mut reconstructed = None;
         for chunk in chain.iter() {
             if chunk.token_index > target_index {
@@ -98,6 +105,11 @@ impl KvDeltaEncoder {
             }
         }
 
-        reconstructed.ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("missing full KV snapshot for target index {}", target_index)))
+        reconstructed.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("missing full KV snapshot for target index {}", target_index),
+            )
+        })
     }
 }

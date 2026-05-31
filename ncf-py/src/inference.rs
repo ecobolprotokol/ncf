@@ -44,9 +44,11 @@ impl NcfModel {
 #[pyfunction]
 pub fn load(path: &str, prefetch: bool, adaptive_quant: bool) -> PyResult<NcfModel> {
     if prefetch {
-        let _ = PrefetchReader::open(path).map_err(|err| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err.to_string()))?;
+        let _ = PrefetchReader::open(path)
+            .map_err(|err| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err.to_string()))?;
     } else {
-        let _ = NcfReader::open(path).map_err(|err| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err.to_string()))?;
+        let _ = NcfReader::open(path)
+            .map_err(|err| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(err.to_string()))?;
     }
     Ok(NcfModel::new(path.to_string(), prefetch, adaptive_quant))
 }

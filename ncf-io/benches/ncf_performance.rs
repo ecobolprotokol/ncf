@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use memmap2::MmapOptions;
-use ncf_core::header::{Metadata, NcfHeader, NcfFlags};
+use ncf_core::header::{Metadata, NcfFlags, NcfHeader};
 use ncf_core::schema::{Compression, DType, Encoding, Layout, TensorSchema};
 use ncf_io::{NcfMmap, NcfReader, NcfWriter};
 use rand::{RngCore, SeedableRng};
@@ -107,7 +107,9 @@ fn build_ncf_from_payloads(path: &Path, payloads: &[TensorPayload]) {
         writer.add_tensor(schema, payload.data.clone());
     }
 
-    writer.finalize(path).expect("failed to create benchmark NCF");
+    writer
+        .finalize(path)
+        .expect("failed to create benchmark NCF");
 }
 
 fn build_safetensors_from_payloads(path: &Path, payloads: &[TensorPayload]) {
@@ -193,7 +195,9 @@ fn benchmark_ncf_mmap_tensor_slice(c: &mut Criterion) {
 
     c.bench_function("ncf_mmap_tensor_slice", |b| {
         b.iter(|| {
-            let slice = mmap.tensor_slice("layer_000").expect("layer_000 slice missing");
+            let slice = mmap
+                .tensor_slice("layer_000")
+                .expect("layer_000 slice missing");
             black_box(slice);
         })
     });
@@ -206,7 +210,9 @@ fn benchmark_ncf_reader_tensor_slice(c: &mut Criterion) {
 
     c.bench_function("ncf_reader_tensor_slice", |b| {
         b.iter(|| {
-            let slice = reader.tensor_slice("layer_000").expect("layer_000 slice missing");
+            let slice = reader
+                .tensor_slice("layer_000")
+                .expect("layer_000 slice missing");
             black_box(slice);
         })
     });
@@ -231,13 +237,15 @@ fn benchmark_ncf_sequential_layer_access(c: &mut Criterion) {
 }
 
 fn benchmark_safetensors_sequential_layer_access(c: &mut Criterion) {
-    let sample_path = PathBuf::from(std::env::temp_dir()).join("safetensors_benchmark_sequential.safetensors");
+    let sample_path =
+        PathBuf::from(std::env::temp_dir()).join("safetensors_benchmark_sequential.safetensors");
     build_realistic_safetensors(&sample_path);
     let bytes = fs::read(&sample_path).expect("read safetensors sample");
 
     c.bench_function("safetensors_sequential_layer_access", |b| {
         b.iter(|| {
-            let tensors = SafeTensors::deserialize(black_box(&bytes)).expect("deserialize safetensors");
+            let tensors =
+                SafeTensors::deserialize(black_box(&bytes)).expect("deserialize safetensors");
             let total: usize = tensors.iter().map(|(_, view)| view.data_len()).sum();
             black_box(total);
         })
@@ -245,13 +253,15 @@ fn benchmark_safetensors_sequential_layer_access(c: &mut Criterion) {
 }
 
 fn benchmark_safetensors_load_equivalent(c: &mut Criterion) {
-    let sample_path = PathBuf::from(std::env::temp_dir()).join("safetensors_benchmark_sample.safetensors");
+    let sample_path =
+        PathBuf::from(std::env::temp_dir()).join("safetensors_benchmark_sample.safetensors");
     build_sample_safetensors(&sample_path);
     let bytes = fs::read(&sample_path).expect("read safetensors sample");
 
     c.bench_function("safetensors_load_equivalent", |b| {
         b.iter(|| {
-            let tensors = SafeTensors::deserialize(black_box(&bytes)).expect("deserialize safetensors");
+            let tensors =
+                SafeTensors::deserialize(black_box(&bytes)).expect("deserialize safetensors");
             black_box(tensors.iter().count());
         })
     });
@@ -282,14 +292,20 @@ fn benchmark_ncf_realistic_load(c: &mut Criterion) {
 }
 
 fn benchmark_safetensors_realistic_load(c: &mut Criterion) {
-    let sample_path = PathBuf::from(std::env::temp_dir()).join("safetensors_benchmark_realistic.safetensors");
+    let sample_path =
+        PathBuf::from(std::env::temp_dir()).join("safetensors_benchmark_realistic.safetensors");
     build_realistic_safetensors(&sample_path);
     let file = fs::File::open(&sample_path).expect("open realistic safetensors");
-    let mmap = unsafe { MmapOptions::new().map(&file).expect("memory map safetensors file") };
+    let mmap = unsafe {
+        MmapOptions::new()
+            .map(&file)
+            .expect("memory map safetensors file")
+    };
 
     c.bench_function("safetensors_realistic_load", |b| {
         b.iter(|| {
-            let tensors = SafeTensors::deserialize(black_box(&mmap[..])).expect("deserialize realistic safetensors");
+            let tensors = SafeTensors::deserialize(black_box(&mmap[..]))
+                .expect("deserialize realistic safetensors");
             black_box(tensors.iter().count());
         })
     });
@@ -326,20 +342,24 @@ fn benchmark_ncf_partial_layer_load(c: &mut Criterion) {
     // without accessing earlier tensor layers.
     c.bench_function("ncf_partial_layer_load", |b| {
         b.iter(|| {
-            let slice = mmap.tensor_slice("layer_015").expect("layer_015 slice missing");
+            let slice = mmap
+                .tensor_slice("layer_015")
+                .expect("layer_015 slice missing");
             black_box(slice.len());
         })
     });
 }
 
 fn benchmark_safetensors_partial_layer_access(c: &mut Criterion) {
-    let sample_path = PathBuf::from(std::env::temp_dir()).join("safetensors_benchmark_partial.safetensors");
+    let sample_path =
+        PathBuf::from(std::env::temp_dir()).join("safetensors_benchmark_partial.safetensors");
     build_sample_safetensors_with_layers(&sample_path, PARTIAL_LAYER_COUNT, PARTIAL_TENSOR_BYTES);
     let bytes = fs::read(&sample_path).expect("read safetensors sample");
 
     c.bench_function("safetensors_partial_layer_access", |b| {
         b.iter(|| {
-            let tensors = SafeTensors::deserialize(black_box(&bytes)).expect("deserialize safetensors");
+            let tensors =
+                SafeTensors::deserialize(black_box(&bytes)).expect("deserialize safetensors");
             let layer = tensors
                 .iter()
                 .find(|(name, _)| *name == "layer_015")
@@ -356,7 +376,9 @@ fn benchmark_ncf_streaming_chunk_verify(c: &mut Criterion) {
 
     c.bench_function("ncf_streaming_chunk_verify", |b| {
         b.iter(|| {
-            let slice = mmap.tensor_slice("layer_000").expect("layer_000 slice missing");
+            let slice = mmap
+                .tensor_slice("layer_000")
+                .expect("layer_000 slice missing");
             let hash = blake3::hash(black_box(slice));
             black_box(hash);
         })
@@ -384,7 +406,11 @@ fn benchmark_quantize_tensor_f32(c: &mut Criterion) {
 
     c.bench_function("quantize_f32_4mb", |b| {
         b.iter(|| {
-            let (_dtype, q, _level) = AdaptiveQuantizer::quantize_tensor("layer_000", ncf_core::schema::DType::F32, black_box(&data));
+            let (_dtype, q, _level) = AdaptiveQuantizer::quantize_tensor(
+                "layer_000",
+                ncf_core::schema::DType::F32,
+                black_box(&data),
+            );
             black_box(q.len());
         })
     });
@@ -396,7 +422,12 @@ fn benchmark_index_serialize_large(c: &mut Criterion) {
     let mut entries = Vec::new();
     let mut tensor_map = BTreeMap::new();
     for i in 0..2000u64 {
-        entries.push(ncf_core::index::IndexEntry { chunk_id: i, byte_offset: i * 1024, byte_len: 1024, tensor_name_hash: i });
+        entries.push(ncf_core::index::IndexEntry {
+            chunk_id: i,
+            byte_offset: i * 1024,
+            byte_len: 1024,
+            tensor_name_hash: i,
+        });
         tensor_map.insert(format!("t{}_", i), i);
     }
     let index = NcfIndex::new(entries, tensor_map);

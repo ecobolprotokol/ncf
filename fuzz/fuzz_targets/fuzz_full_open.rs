@@ -1,8 +1,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use tempfile::NamedTempFile;
 use std::io::Write;
+use tempfile::NamedTempFile;
 
 fuzz_target!(|data: &[u8]| {
     // Create a temporary file with the fuzzed data
@@ -10,7 +10,7 @@ fuzz_target!(|data: &[u8]| {
         let _ = file.write_all(data);
         let _ = file.flush();
         let path = file.path();
-        
+
         // Try to open the file as NCF
         // This tests the entire parsing pipeline:
         // - File header prefix validation
