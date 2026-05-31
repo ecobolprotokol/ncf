@@ -427,7 +427,7 @@ fn benchmark_dedup_register(c: &mut Criterion) {
             for (i, p) in payloads.iter().enumerate() {
                 local.register_payload(black_box(&p), (i as u64) * 2048);
             }
-            black_box(local.lookup.len());
+            black_box(local.len());
         })
     });
 }

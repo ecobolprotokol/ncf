@@ -40,6 +40,11 @@ impl DedupCache {
             None
         }
     }
+
+    /// Return the number of unique payload hashes cached.
+    pub fn len(&self) -> usize {
+        self.lookup.len()
+    }
 }
 
 impl Default for DedupCache {
