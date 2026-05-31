@@ -87,6 +87,35 @@ impl PrefetchReader {
         })
     }
 
+    /// Verify all chunk payload checksums once for the opened file.
+    pub fn verify_all_checksums(&self) -> Result<()> {
+        let data = &*self.mmap;
+        for s in self.schemas.iter() {
+            for c in s.chunks.iter() {
+                // find entry by chunk id
+                let entry_opt = self.index.entries.iter().find(|e| e.chunk_id == c.chunk_id);
+                let entry = match entry_opt {
+                    Some(e) => e,
+                    None => continue,
+                };
+                let offset_start = (entry.byte_offset as usize).checked_add(CHUNK_HEADER_SIZE as usize)
+                    .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidData, "chunk offset overflow"))?;
+                let data_len = (entry.byte_len as usize).saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
+                let offset_end = offset_start.checked_add(data_len)
+                    .ok_or_else(|| std::io::Error::new(ErrorKind::InvalidData, "chunk data size overflow"))?;
+                if offset_end > data.len() {
+                    return Err(std::io::Error::new(ErrorKind::InvalidData, "chunk data out of bounds").into());
+                }
+                let payload = &data[offset_start..offset_end];
+                let hash = blake3::hash(payload);
+                if hash.as_bytes() != &c.checksum {
+                    return Err(std::io::Error::new(ErrorKind::InvalidData, "checksum mismatch").into());
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn advise_region(&self, start: usize, len: usize) {
         if len == 0 || start >= self.mmap.len() {
             return;

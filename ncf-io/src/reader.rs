@@ -36,11 +36,13 @@ pub struct BorrowedNcfIndex<'a> {
 pub struct ReaderOptions {
     /// Enable prefetching on the reader.
     pub prefetch: bool,
+    /// Verify all chunk checksums once when opening the reader.
+    pub verify_on_open: bool,
 }
 
 impl Default for ReaderOptions {
     fn default() -> Self {
-        Self { prefetch: false }
+        Self { prefetch: false, verify_on_open: false }
     }
 }
 
@@ -56,9 +58,14 @@ impl NcfReaderHandle {
     /// Open an NCF file with reader options.
     pub fn open_with_options<P: AsRef<Path>>(path: P, options: ReaderOptions) -> Result<Self> {
         if options.prefetch {
-            Ok(NcfReaderHandle::Prefetch(PrefetchReader::open(path)?))
+            let pre = PrefetchReader::open(path.as_ref())?;
+            if options.verify_on_open {
+                let _ = pre.verify_all_checksums()?;
+            }
+            Ok(NcfReaderHandle::Prefetch(pre))
         } else {
-            Ok(NcfReaderHandle::Direct(NcfReader::open(path)?))
+            let direct = NcfReader::open_with_options(path.as_ref(), options)?;
+            Ok(NcfReaderHandle::Direct(direct))
         }
     }
 
@@ -141,6 +148,8 @@ pub struct NcfReaderData<'this> {
     pub index: BorrowedNcfIndex<'this>,
     /// Parsed file header prefix.
     pub header_prefix: FileHeaderPrefix,
+    /// Optional path key into the global parsed-header cache.
+    pub cache_key: Option<PathBuf>,
     /// Auxiliary map from chunk_id -> index in `index.entries` for O(1) lookup.
     pub chunk_map: HashMap<u64, usize>,
 }
@@ -149,7 +158,7 @@ struct CachedHeader {
     header_prefix: FileHeaderPrefix,
     metadata: NcfHeader,
     file_size: u64,
-    schemas: Option<std::result::Result<Vec<TensorSchema>, String>>,
+    schemas: OnceCell<std::result::Result<Vec<TensorSchema>, String>>,
 }
 
 static PARSED_HEADER_CACHE: Lazy<Mutex<HashMap<PathBuf, CachedHeader>>> = Lazy::new(|| Mutex::new(HashMap::new()));
@@ -186,7 +195,7 @@ impl NcfReader {
             if let Ok(cache_guard) = PARSED_HEADER_CACHE.lock() {
                 if let Some(ch) = cache_guard.get(&key_path) {
                     if ch.file_size == file_size {
-                        if let Some(s) = &ch.schemas {
+                        if let Some(s) = ch.schemas.get() {
                             cached_schemas = Some(s.clone());
                         }
                     }
@@ -210,9 +219,9 @@ impl NcfReader {
                 let metadata = NcfHeader::decode_cbor(&mmap[header_start..header_end])
                     .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
 
-                // store in cache (best-effort)
+                // store in cache (best-effort) with empty OnceCell for schemas
                 if let Ok(mut cache_guard) = PARSED_HEADER_CACHE.lock() {
-                    cache_guard.insert(key_path.clone(), CachedHeader { header_prefix: header_prefix.clone(), metadata: metadata.clone(), file_size, schemas: None });
+                    cache_guard.insert(key_path.clone(), CachedHeader { header_prefix: header_prefix.clone(), metadata: metadata.clone(), file_size, schemas: OnceCell::new() });
                 }
 
                 (header_prefix, metadata)
@@ -266,13 +275,12 @@ impl NcfReader {
                 ));
             }
 
-            // Attempt to reuse cached index/schemas if present
-            let mut cached_index: Option<NcfIndex> = None;
+            // Attempt to reuse cached schemas if present
             let mut cached_schemas: Option<std::result::Result<Vec<TensorSchema>, String>> = None;
             if let Ok(cache_guard) = PARSED_HEADER_CACHE.lock() {
                 if let Some(ch) = cache_guard.get(&key_path) {
                     if ch.file_size == file_size {
-                        if let Some(s) = &ch.schemas {
+                        if let Some(s) = ch.schemas.get() {
                             cached_schemas = Some(s.clone());
                         }
                     }
@@ -305,10 +313,20 @@ impl NcfReader {
                 schema_range,
                 index,
                 header_prefix,
+                cache_key: Some(key_path.clone()),
                 chunk_map,
             })
         })?;
 
+        Ok(reader)
+    }
+
+    /// Open with `ReaderOptions` control (e.g., verify_on_open).
+    pub fn open_with_options<P: AsRef<Path>>(path: P, options: ReaderOptions) -> Result<Self> {
+        let reader = NcfReader::open(path.as_ref())?;
+        if options.verify_on_open {
+            let _ = reader.verify_all_checksums()?;
+        }
         Ok(reader)
     }
 
@@ -389,6 +407,18 @@ impl NcfReader {
                 let mut schema_de = CborDeserializer::from_slice(schema_bytes);
                 Deserialize::deserialize(&mut schema_de).map_err(|err| err.to_string())
             });
+
+            // If we have a global cache entry for this path, populate it once
+            if let Some(cache_key) = &data.cache_key {
+                if let Ok(cache_guard) = PARSED_HEADER_CACHE.lock() {
+                    if let Some(ch) = cache_guard.get(cache_key) {
+                        // best-effort: set global OnceCell if not already set
+                        if ch.schemas.get().is_none() {
+                            let _ = ch.schemas.set(schemas_cell.clone());
+                        }
+                    }
+                }
+            }
 
             match schemas_cell.as_ref() {
                 Ok(schemas) => Ok(schemas.as_slice()),
