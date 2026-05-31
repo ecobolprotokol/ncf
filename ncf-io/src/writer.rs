@@ -169,6 +169,26 @@ impl NcfWriter {
             }
             final_schema_bytes.clear();
             into_writer(&schemas, &mut final_schema_bytes)?;
+            // If the re-serialized schema length changed compared to the
+            // schema_bytes used while computing chunk offsets above, adjust
+            // all recorded byte offsets by the delta so they match the
+            // eventual layout written to disk.
+            let delta = final_schema_bytes.len() as i64 - schema_bytes.len() as i64;
+            if delta != 0 {
+                let delta_u = delta as i64;
+                for s in schemas.iter_mut() {
+                    for c in s.chunks.iter_mut() {
+                        c.byte_offset = ((c.byte_offset as i64) + delta_u) as u64;
+                    }
+                }
+                for ie in index_entries.iter_mut() {
+                    ie.byte_offset = ((ie.byte_offset as i64) + delta_u) as u64;
+                }
+            }
+            // Re-serialize the schemas so the written schema bytes include
+            // the adjusted offsets we just applied above.
+            final_schema_bytes.clear();
+            into_writer(&schemas, &mut final_schema_bytes)?;
         }
 
         let schema_offset = 48 + header_len;
