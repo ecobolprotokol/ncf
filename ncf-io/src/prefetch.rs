@@ -153,10 +153,8 @@ impl PrefetchReader {
         let data = &*self.mmap;
         for s in self.schemas.iter() {
             for c in s.chunks.iter() {
-                // find entry by chunk id
-                let entry_opt = self.index.entries.iter().find(|e| e.chunk_id == c.chunk_id);
-                let entry = match entry_opt {
-                    Some(e) => e,
+                let entry = match self.index.find_entry(c.chunk_id) {
+                    Some(entry) => entry,
                     None => continue,
                 };
                 let offset_start = (entry.byte_offset as usize)
@@ -266,11 +264,7 @@ impl PrefetchReader {
     /// Return a zero-copy slice of a named tensor payload.
     pub fn tensor_slice(&self, name: &str) -> Option<&[u8]> {
         let chunk_id = self.index.find_chunk_id(name)?;
-        let entry = self
-            .index
-            .entries
-            .iter()
-            .find(|entry| entry.chunk_id == chunk_id)?;
+        let entry = self.index.find_entry(chunk_id)?;
         let offset_start = entry.byte_offset as usize + CHUNK_HEADER_SIZE as usize;
         let data_len = (entry.byte_len as usize)
             .saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
@@ -301,12 +295,7 @@ impl PrefetchReader {
             None => return Ok(None),
         };
 
-        let entry = self
-            .index
-            .entries
-            .iter()
-            .find(|entry| entry.chunk_id == chunk_id);
-        let entry = match entry {
+        let entry = match self.index.find_entry(chunk_id) {
             Some(entry) => entry,
             None => return Ok(None),
         };
