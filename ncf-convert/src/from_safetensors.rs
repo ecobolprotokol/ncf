@@ -1,5 +1,7 @@
 use anyhow::Context;
 use ncf_core::header::{Metadata, NcfHeader, NcfFlags};
+use ncf_core::quantize::AdaptiveQuantizer;
+use ncf_core::quantize::QuantLevel;
 use ncf_core::schema::{Compression, DType, Encoding, Layout, TensorSchema};
 use ncf_io::NcfWriter;
 use safetensors::{SafeTensors, Dtype as SafeDtype};
@@ -42,6 +44,7 @@ pub fn safetensors_to_ncf<P: AsRef<Path>>(input: P, output: P, architecture: Opt
             _ => DType::Custom(0),
         };
         let payload = tensor.data().to_owned();
+        let (dtype, quantized_payload, level) = AdaptiveQuantizer::quantize_tensor(&name, dtype, &payload);
         let schema = TensorSchema {
             name: name.to_string(),
             dtype,
@@ -51,7 +54,8 @@ pub fn safetensors_to_ncf<P: AsRef<Path>>(input: P, output: P, architecture: Opt
             encoding: Encoding::Plain,
             chunks: Vec::new(),
         };
-        writer.add_tensor(schema, payload);
+        writer.add_tensor(schema, quantized_payload);
+        writer.set_tensor_quant_level(name.to_string(), level);
     }
     writer.finalize(output)?;
     Ok(())

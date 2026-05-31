@@ -33,6 +33,9 @@ pub struct ChunkRef {
     pub uncompressed_len: u64,
     /// Blake3 checksum of the uncompressed payload.
     pub checksum: [u8; 32],
+    /// Canonical offset for deduplicated payloads.
+    #[serde(default)]
+    pub canonical_offset: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

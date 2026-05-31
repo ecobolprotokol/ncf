@@ -1,6 +1,7 @@
 use memmap2::Mmap;
+use crate::prefetch::PrefetchReader;
 use ncf_core::header::{FileHeaderPrefix, NcfHeader};
-use ncf_core::index::IndexEntry;
+use ncf_core::index::{IndexEntry, NcfIndex};
 use ncf_core::schema::TensorSchema;
 use ncf_core::constants::*;
 use ncf_core::Result;
@@ -23,6 +24,77 @@ pub struct BorrowedNcfIndex<'a> {
     pub entries: Vec<IndexEntry>,
     /// Mapping from tensor name to chunk id (borrowed str keys).
     pub tensor_map: HashMap<&'a str, u64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ReaderOptions {
+    /// Enable prefetching on the reader.
+    pub prefetch: bool,
+}
+
+impl Default for ReaderOptions {
+    fn default() -> Self {
+        Self { prefetch: false }
+    }
+}
+
+/// A reader handle that can either use a direct NCF reader or a prefetch-aware reader.
+pub enum NcfReaderHandle {
+    Direct(NcfReader),
+    Prefetch(PrefetchReader),
+}
+
+impl NcfReaderHandle {
+    /// Open an NCF file with reader options.
+    pub fn open_with_options<P: AsRef<Path>>(path: P, options: ReaderOptions) -> Result<Self> {
+        if options.prefetch {
+            Ok(NcfReaderHandle::Prefetch(PrefetchReader::open(path)?))
+        } else {
+            Ok(NcfReaderHandle::Direct(NcfReader::open(path)?))
+        }
+    }
+
+    pub fn metadata(&self) -> &NcfHeader {
+        match self {
+            NcfReaderHandle::Direct(reader) => reader.metadata(),
+            NcfReaderHandle::Prefetch(reader) => reader.metadata(),
+        }
+    }
+
+    pub fn schemas(&self) -> Result<&[TensorSchema]> {
+        match self {
+            NcfReaderHandle::Direct(reader) => reader.schemas(),
+            NcfReaderHandle::Prefetch(reader) => reader.schemas().map_err(|err| err),
+        }
+    }
+
+    pub fn header_prefix(&self) -> FileHeaderPrefix {
+        match self {
+            NcfReaderHandle::Direct(reader) => reader.header_prefix(),
+            NcfReaderHandle::Prefetch(reader) => reader.header_prefix(),
+        }
+    }
+
+    pub fn tensor_slice(&self, name: &str) -> Option<&[u8]> {
+        match self {
+            NcfReaderHandle::Direct(reader) => reader.tensor_slice(name),
+            NcfReaderHandle::Prefetch(reader) => reader.tensor_slice(name),
+        }
+    }
+
+    pub fn read_tensor(&self, name: &str) -> Result<Option<Vec<u8>>> {
+        match self {
+            NcfReaderHandle::Direct(reader) => reader.read_tensor(name),
+            NcfReaderHandle::Prefetch(reader) => reader.read_tensor(name),
+        }
+    }
+
+    pub fn inspect(&self) -> Result<()> {
+        match self {
+            NcfReaderHandle::Direct(reader) => reader.inspect(),
+            NcfReaderHandle::Prefetch(reader) => reader.inspect(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

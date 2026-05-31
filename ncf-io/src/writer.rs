@@ -1,7 +1,10 @@
 use ciborium::ser::into_writer;
 use ncf_core::chunk::ChunkHeader;
+use ncf_core::constants::*;
+use ncf_core::dedup::DedupCache;
 use ncf_core::header::{FileHeaderPrefix, NCF_MAGIC, NcfHeader, NcfFlags};
 use ncf_core::index::{IndexEntry, NcfIndex};
+use ncf_core::quantize::QuantLevel;
 use ncf_core::schema::{ChunkRef, Compression, TensorSchema};
 use ncf_core::Result;
 use std::collections::BTreeMap;
@@ -17,6 +20,8 @@ pub struct NcfWriter {
     pub flags: NcfFlags,
     /// Tensors to be written (schema + payload bytes).
     pub tensors: Vec<(TensorSchema, Vec<u8>)>,
+    /// Per-tensor quantization hints stored in the index header.
+    pub tensor_quant_levels: BTreeMap<String, QuantLevel>,
 }
 
 impl NcfWriter {
@@ -26,7 +31,13 @@ impl NcfWriter {
             metadata,
             flags,
             tensors: Vec::new(),
+            tensor_quant_levels: BTreeMap::new(),
         }
+    }
+
+    /// Set an explicit quantization level for a named tensor.
+    pub fn set_tensor_quant_level(&mut self, name: String, level: QuantLevel) {
+        self.tensor_quant_levels.insert(name, level);
     }
 
     /// Add a tensor schema and its payload to be written.
@@ -56,34 +67,43 @@ impl NcfWriter {
         let mut index_entries = Vec::new();
         let mut tensor_map = BTreeMap::new();
         let mut chunk_data = Vec::new();
+        let mut dedup = DedupCache::new();
 
         for (tensor, payload) in &self.tensors {
             let raw = payload.clone();
-            let checksum = blake3::hash(&raw);
-            let chunk_header = ChunkHeader {
-                chunk_id,
-                flags: if tensor.compression != Compression::None { 1 } else { 0 },
-                uncompressed_len: raw.len() as u64,
-                compressed_len: raw.len() as u64,
-            };
             let chunk_offset = 48 + header_len + schema_bytes.len() as u64 + chunk_data.len() as u64;
-            chunk_data.extend_from_slice(&chunk_header.encode());
-            chunk_data.extend_from_slice(&raw);
-            chunk_data.extend_from_slice(checksum.as_bytes());
+            let duplicate_offset = dedup.get_canonical_offset(&raw);
+            let checksum = blake3::hash(&raw);
 
+            if duplicate_offset.is_none() {
+                let chunk_header = ChunkHeader {
+                    chunk_id,
+                    flags: if tensor.compression != Compression::None { 1 } else { 0 },
+                    uncompressed_len: raw.len() as u64,
+                    compressed_len: raw.len() as u64,
+                };
+                chunk_data.extend_from_slice(&chunk_header.encode());
+                chunk_data.extend_from_slice(&raw);
+                chunk_data.extend_from_slice(checksum.as_bytes());
+                dedup.register_payload(&raw, chunk_offset);
+            }
+
+            let payload_offset = duplicate_offset.unwrap_or(chunk_offset);
+            let chunk_len = (CHUNK_HEADER_SIZE as u64) + raw.len() as u64 + 32;
             let chunk_ref = ChunkRef {
                 chunk_id,
-                byte_offset: chunk_offset,
-                byte_len: chunk_header.encode().len() as u64 + raw.len() as u64 + 32,
+                byte_offset: payload_offset,
+                byte_len: chunk_len,
                 uncompressed_len: raw.len() as u64,
                 checksum: *checksum.as_bytes(),
+                canonical_offset: duplicate_offset,
             };
             if let Some(schema) = schemas.iter_mut().find(|schema| schema.name == tensor.name) {
                 schema.chunks.push(chunk_ref.clone());
             }
             index_entries.push(IndexEntry {
                 chunk_id,
-                byte_offset: chunk_offset,
+                byte_offset: payload_offset,
                 byte_len: chunk_ref.byte_len,
                 tensor_name_hash: xxhash_rust::xxh3::xxh3_64(tensor.name.as_bytes()),
             });
@@ -100,6 +120,7 @@ impl NcfWriter {
             index_entries.clear();
             tensor_map.clear();
             chunk_id = 0;
+            dedup = DedupCache::new();
             // Clear all schema chunk lists once before the second pass so
             // tensors that span multiple chunks retain all their chunk refs.
             for s in schemas.iter_mut() {
@@ -107,30 +128,39 @@ impl NcfWriter {
             }
             for (tensor, payload) in &self.tensors {
                 let raw = payload.clone();
-                let checksum = blake3::hash(&raw);
-                let chunk_header = ChunkHeader {
-                    chunk_id,
-                    flags: if tensor.compression != Compression::None { 1 } else { 0 },
-                    uncompressed_len: raw.len() as u64,
-                    compressed_len: raw.len() as u64,
-                };
                 let chunk_offset = 48 + header_len + schema_bytes.len() as u64 + chunk_data.len() as u64;
-                chunk_data.extend_from_slice(&chunk_header.encode());
-                chunk_data.extend_from_slice(&raw);
-                chunk_data.extend_from_slice(checksum.as_bytes());
+                let duplicate_offset = dedup.get_canonical_offset(&raw);
+                let checksum = blake3::hash(&raw);
+
+                if duplicate_offset.is_none() {
+                    let chunk_header = ChunkHeader {
+                        chunk_id,
+                        flags: if tensor.compression != Compression::None { 1 } else { 0 },
+                        uncompressed_len: raw.len() as u64,
+                        compressed_len: raw.len() as u64,
+                    };
+                    chunk_data.extend_from_slice(&chunk_header.encode());
+                    chunk_data.extend_from_slice(&raw);
+                    chunk_data.extend_from_slice(checksum.as_bytes());
+                    dedup.register_payload(&raw, chunk_offset);
+                }
+
+                let payload_offset = duplicate_offset.unwrap_or(chunk_offset);
+                let chunk_len = (CHUNK_HEADER_SIZE as u64) + raw.len() as u64 + 32;
                 let chunk_ref = ChunkRef {
                     chunk_id,
-                    byte_offset: chunk_offset,
-                    byte_len: chunk_header.encode().len() as u64 + raw.len() as u64 + 32,
+                    byte_offset: payload_offset,
+                    byte_len: chunk_len,
                     uncompressed_len: raw.len() as u64,
                     checksum: *checksum.as_bytes(),
+                    canonical_offset: duplicate_offset,
                 };
                 if let Some(schema) = schemas.iter_mut().find(|schema| schema.name == tensor.name) {
                     schema.chunks.push(chunk_ref.clone());
                 }
                 index_entries.push(IndexEntry {
                     chunk_id,
-                    byte_offset: chunk_offset,
+                    byte_offset: payload_offset,
                     byte_len: chunk_ref.byte_len,
                     tensor_name_hash: xxhash_rust::xxh3::xxh3_64(tensor.name.as_bytes()),
                 });
@@ -143,7 +173,7 @@ impl NcfWriter {
 
         let schema_offset = 48 + header_len;
         let index_offset = 48 + header_len + final_schema_bytes.len() as u64 + chunk_data.len() as u64;
-        let index = NcfIndex::new(index_entries, tensor_map);
+        let index = NcfIndex::with_quant_levels(index_entries, tensor_map, self.tensor_quant_levels.clone());
         let mut index_bytes = Vec::new();
         into_writer(&index, &mut index_bytes)?;
         let footer_len = (index_bytes.len() as u64).to_le_bytes();

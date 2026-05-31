@@ -1,3 +1,4 @@
+use crate::quantize::QuantLevel;
 use crate::schema::TensorSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -24,6 +25,9 @@ pub struct NcfIndex {
     pub entries: Vec<IndexEntry>,
     /// Mapping from tensor name to primary chunk id.
     pub tensor_map: BTreeMap<String, u64>,
+    /// Quantization levels assigned per tensor name.
+    #[serde(default)]
+    pub quant_levels: BTreeMap<String, QuantLevel>,
 }
 
 impl NcfIndex {
@@ -34,6 +38,22 @@ impl NcfIndex {
             entry_count,
             entries,
             tensor_map,
+            quant_levels: BTreeMap::new(),
+        }
+    }
+
+    /// Construct an index with explicit quantization metadata.
+    pub fn with_quant_levels(
+        entries: Vec<IndexEntry>,
+        tensor_map: BTreeMap<String, u64>,
+        quant_levels: BTreeMap<String, QuantLevel>,
+    ) -> Self {
+        let entry_count = entries.len() as u64;
+        Self {
+            entry_count,
+            entries,
+            tensor_map,
+            quant_levels,
         }
     }
 

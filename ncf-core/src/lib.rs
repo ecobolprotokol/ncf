@@ -9,11 +9,19 @@ pub mod header;
 pub mod index;
 /// Tensor schemas and related enums.
 pub mod schema;
+pub mod layout;
+pub mod quantize;
+pub mod dedup;
+pub mod kv_delta;
 
 pub use chunk::*;
 pub use header::*;
 pub use index::*;
 pub use schema::*;
+pub use layout::*;
+pub use quantize::*;
+pub use dedup::*;
+pub use kv_delta::*;
 
 /// NCF Format Structure Constants
 ///

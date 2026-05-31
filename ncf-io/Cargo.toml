@@ -8,6 +8,9 @@ blake3 = "1.5"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 ncf-core = { path = "../ncf-core" }
 memmap2 = "0.9"
+bytes = "1.4"
+crossbeam = "0.8"
+zstd = "0.13"
 serde = { version = "1.0", features = ["derive"] }
 serde_cbor = "0.11"
 ciborium = { version = "0.2", features = ["std"] }

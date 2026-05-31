@@ -10,3 +10,5 @@ blake3 = "1.5"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 bitflags = { version = "2.11", features = ["serde"] }
 thiserror = "1.0"
+zstd = "0.13"
+rayon = "1.10"
