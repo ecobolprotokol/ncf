@@ -412,7 +412,6 @@ fn benchmark_index_serialize_large(c: &mut Criterion) {
 
 fn benchmark_dedup_register(c: &mut Criterion) {
     use ncf_core::dedup::DedupCache;
-    let mut dedup = DedupCache::new();
     let mut rng = ChaCha20Rng::seed_from_u64(0xdeadbeef);
     let mut payloads = Vec::new();
     for _ in 0..1000 {
@@ -423,11 +422,11 @@ fn benchmark_dedup_register(c: &mut Criterion) {
 
     c.bench_function("dedup_register_1k_1kb", |b| {
         b.iter(|| {
-            let mut local = DedupCache::new();
+            let mut dedup = DedupCache::new();
             for (i, p) in payloads.iter().enumerate() {
-                local.register_payload(black_box(&p), (i as u64) * 2048);
+                dedup.register_payload(black_box(&p), (i as u64) * 2048);
             }
-            black_box(local.len());
+            black_box(dedup.len());
         })
     });
 }

@@ -18,7 +18,6 @@ use libc::{c_void, madvise, MADV_WILLNEED};
 use once_cell::sync::Lazy;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use ncf_core::index::NcfIndex;
 
 #[derive(Debug)]
 /// Borrowed view of an NCF index decoded from the file.
@@ -273,18 +272,6 @@ impl NcfReader {
                     ErrorKind::InvalidData,
                     format!("index block overlaps footer: end={}, footer_pos={}", index_end, footer_position)
                 ));
-            }
-
-            // Attempt to reuse cached schemas if present
-            let mut cached_schemas: Option<std::result::Result<Vec<TensorSchema>, String>> = None;
-            if let Ok(cache_guard) = PARSED_HEADER_CACHE.lock() {
-                if let Some(ch) = cache_guard.get(&key_path) {
-                    if ch.file_size == file_size {
-                        if let Some(s) = ch.schemas.get() {
-                            cached_schemas = Some(s.clone());
-                        }
-                    }
-                }
             }
 
             let mut index_de = CborDeserializer::from_slice(&mmap[index_start..index_end]);
