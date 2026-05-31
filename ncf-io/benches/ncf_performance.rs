@@ -363,6 +363,75 @@ fn benchmark_ncf_streaming_chunk_verify(c: &mut Criterion) {
     });
 }
 
+fn benchmark_ncf_writer_sample_write(c: &mut Criterion) {
+    let sample_path = PathBuf::from(std::env::temp_dir()).join("ncf_benchmark_writer_sample.ncf");
+    let payloads = build_realistic_tensor_payload(4, 4 * 1024 * 1024);
+
+    c.bench_function("ncf_writer_sample_write", |b| {
+        b.iter(|| {
+            build_ncf_from_payloads(&sample_path, black_box(&payloads));
+            black_box(&sample_path);
+        })
+    });
+}
+
+fn benchmark_quantize_tensor_f32(c: &mut Criterion) {
+    use ncf_core::quantize::AdaptiveQuantizer;
+    // small payload for smoke test
+    let mut rng = ChaCha20Rng::seed_from_u64(0x1234);
+    let mut data = vec![0u8; 4 * 1024 * 1024];
+    rng.fill_bytes(&mut data);
+
+    c.bench_function("quantize_f32_4mb", |b| {
+        b.iter(|| {
+            let (_dtype, q, _level) = AdaptiveQuantizer::quantize_tensor("layer_000", ncf_core::schema::DType::F32, black_box(&data));
+            black_box(q.len());
+        })
+    });
+}
+
+fn benchmark_index_serialize_large(c: &mut Criterion) {
+    use ncf_core::index::NcfIndex;
+    // build a large index with many dummy entries
+    let mut entries = Vec::new();
+    let mut tensor_map = BTreeMap::new();
+    for i in 0..2000u64 {
+        entries.push(ncf_core::index::IndexEntry { chunk_id: i, byte_offset: i * 1024, byte_len: 1024, tensor_name_hash: i });
+        tensor_map.insert(format!("t{}_", i), i);
+    }
+    let index = NcfIndex::new(entries, tensor_map);
+
+    c.bench_function("index_serialize_cbor_2k", |b| {
+        b.iter(|| {
+            let mut out = Vec::new();
+            ciborium::ser::into_writer(black_box(&index), &mut out).expect("serialize");
+            black_box(out.len());
+        })
+    });
+}
+
+fn benchmark_dedup_register(c: &mut Criterion) {
+    use ncf_core::dedup::DedupCache;
+    let mut dedup = DedupCache::new();
+    let mut rng = ChaCha20Rng::seed_from_u64(0xdeadbeef);
+    let mut payloads = Vec::new();
+    for _ in 0..1000 {
+        let mut d = vec![0u8; 1024];
+        rng.fill_bytes(&mut d);
+        payloads.push(d);
+    }
+
+    c.bench_function("dedup_register_1k_1kb", |b| {
+        b.iter(|| {
+            let mut local = DedupCache::new();
+            for (i, p) in payloads.iter().enumerate() {
+                local.register_payload(black_box(&p), (i as u64) * 2048);
+            }
+            black_box(local.lookup.len());
+        })
+    });
+}
+
 criterion_group!(
     benches,
     benchmark_ncf_reader_open,
@@ -378,5 +447,9 @@ criterion_group!(
     benchmark_ncf_partial_layer_load,
     benchmark_safetensors_partial_layer_access,
     benchmark_ncf_streaming_chunk_verify,
+    benchmark_ncf_writer_sample_write,
+    benchmark_quantize_tensor_f32,
+    benchmark_index_serialize_large,
+    benchmark_dedup_register,
 );
 criterion_main!(benches);
