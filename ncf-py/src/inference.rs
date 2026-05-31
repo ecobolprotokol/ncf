@@ -1,16 +1,8 @@
-use ncf_io::{NcfReader, PrefetchReader, ReaderOptions};
+use ncf_io::{NcfReader, PrefetchReader};
 use pyo3::prelude::*;
-use std::sync::Arc;
 
 #[pyclass]
 pub struct NcfModel {
-    path: String,
-    prefetch: bool,
-    adaptive_quant: bool,
-    inner: Arc<ModelInner>,
-}
-
-struct ModelInner {
     path: String,
     prefetch: bool,
     adaptive_quant: bool,
@@ -21,14 +13,9 @@ impl NcfModel {
     #[new]
     fn new(path: String, prefetch: bool, adaptive_quant: bool) -> Self {
         Self {
-            path: path.clone(),
+            path,
             prefetch,
             adaptive_quant,
-            inner: Arc::new(ModelInner {
-                path,
-                prefetch,
-                adaptive_quant,
-            }),
         }
     }
 
@@ -38,6 +25,13 @@ impl NcfModel {
         if stream {
             result.push_str(" [streaming]");
         }
+        if self.prefetch {
+            result.push_str(" [prefetch]");
+        }
+        if self.adaptive_quant {
+            result.push_str(" [adaptive_quant]");
+        }
+        result.push_str(&format!(" [model={}]", self.path));
         result.push_str(&format!(" [max_tokens={}]", max_tokens));
         Ok(result)
     }

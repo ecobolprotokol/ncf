@@ -3,11 +3,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Quantization levels used by the adaptive quantizer.
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum QuantLevel {
+    /// 8-bit quantization.
     Q8,
+    /// 4-bit quantization.
     Q4,
+    /// 2-bit quantization.
     Q2,
+    /// Lower-precision 4-bit K/M quantization.
     Q4_K_M,
 }
 

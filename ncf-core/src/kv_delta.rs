@@ -3,8 +3,13 @@ use serde::{Deserialize, Serialize};
 /// Encoding mode for a KV cache chunk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum KvEncoding {
+    /// A full snapshot of the KV cache.
     Full,
-    Delta { base_offset: u64 },
+    /// A delta record relative to a previous snapshot.
+    Delta {
+        /// Offset into the stream or snapshot base for delta reconstruction.
+        base_offset: u64,
+    },
 }
 
 /// A single encoded KV cache record.

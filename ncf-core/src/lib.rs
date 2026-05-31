@@ -9,9 +9,13 @@ pub mod header;
 pub mod index;
 /// Tensor schemas and related enums.
 pub mod schema;
+/// Layout helpers for tensor alignment and SIMD-friendly payloads.
 pub mod layout;
+/// Adaptive quantization helpers used during NCF generation.
 pub mod quantize;
+/// Deduplication helpers for tensor chunk storage.
 pub mod dedup;
+/// KV delta encoding utilities for context window expansion.
 pub mod kv_delta;
 
 pub use chunk::*;

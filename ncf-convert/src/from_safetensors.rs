@@ -1,7 +1,6 @@
 use anyhow::Context;
 use ncf_core::header::{Metadata, NcfHeader, NcfFlags};
 use ncf_core::quantize::AdaptiveQuantizer;
-use ncf_core::quantize::QuantLevel;
 use ncf_core::schema::{Compression, DType, Encoding, Layout, TensorSchema};
 use ncf_io::NcfWriter;
 use safetensors::{SafeTensors, Dtype as SafeDtype};

@@ -4,7 +4,8 @@ mod inference;
 use inference::{context_limit, generate, load, NcfModel};
 
 #[pymodule]
-fn ncf_py(_py: Python, m: &PyModule) -> PyResult<()> {
+#[allow(deprecated)]
+fn ncf_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<NcfModel>()?;
     m.add_function(wrap_pyfunction!(load, m)?)?;
     m.add_function(wrap_pyfunction!(generate, m)?)?;

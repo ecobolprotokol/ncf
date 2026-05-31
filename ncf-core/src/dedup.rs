@@ -1,5 +1,4 @@
 use crate::schema::ChunkRef;
-use blake3::Hasher;
 use std::collections::HashMap;
 
 /// Metadata used by the deduplication stage of NCF writing.

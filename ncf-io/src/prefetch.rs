@@ -112,7 +112,7 @@ impl PrefetchReader {
                 if offset_start >= mmap.len() {
                     return;
                 }
-                let data_len = entry.byte_len as usize.saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
+                let data_len = (entry.byte_len as usize).saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
                 let offset_end = offset_start.saturating_add(data_len);
                 if offset_end > mmap.len() {
                     return;
@@ -129,19 +129,22 @@ impl PrefetchReader {
         &self.metadata
     }
 
+    /// Return the tensor schema list from the opened NCF file.
     pub fn schemas(&self) -> Result<&[TensorSchema]> {
         Ok(&self.schemas)
     }
 
+    /// Return the parsed NCF header prefix for the opened file.
     pub fn header_prefix(&self) -> FileHeaderPrefix {
         self.header_prefix
     }
 
+    /// Return a zero-copy slice of a named tensor payload.
     pub fn tensor_slice(&self, name: &str) -> Option<&[u8]> {
         let chunk_id = self.index.find_chunk_id(name)?;
         let entry = self.index.entries.iter().find(|entry| entry.chunk_id == chunk_id)?;
         let offset_start = entry.byte_offset as usize + CHUNK_HEADER_SIZE as usize;
-        let data_len = entry.byte_len as usize.saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
+        let data_len = (entry.byte_len as usize).saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
         let offset_end = offset_start.checked_add(data_len)?;
         if offset_end > self.mmap.len() {
             return None;
@@ -149,6 +152,7 @@ impl PrefetchReader {
         Some(&self.mmap[offset_start..offset_end])
     }
 
+    /// Print file metadata and schema details for debugging.
     pub fn inspect(&self) -> Result<()> {
         let schemas = self.schemas()?;
         println!("Model: {}", self.metadata.metadata.model_name);
@@ -160,6 +164,7 @@ impl PrefetchReader {
         Ok(())
     }
 
+    /// Read a tensor payload and start background prefetch for the next chunk.
     pub fn read_tensor(&self, name: &str) -> Result<Option<Vec<u8>>> {
         let chunk_id = self.index.find_chunk_id(name);
         let chunk_id = match chunk_id {
@@ -182,7 +187,7 @@ impl PrefetchReader {
 
         let data = &self.mmap;
         let offset_start = entry.byte_offset as usize + CHUNK_HEADER_SIZE as usize;
-        let data_len = entry.byte_len as usize.saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
+        let data_len = (entry.byte_len as usize).saturating_sub((CHUNK_HEADER_SIZE + CHUNK_CHECKSUM_SIZE) as usize);
         let offset_end = offset_start + data_len;
         if offset_end > data.len() {
             return Err(std::io::Error::new(ErrorKind::InvalidData, "chunk data out of bounds").into());

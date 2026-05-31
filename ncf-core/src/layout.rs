@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::alloc::{alloc, dealloc, Layout};
 use std::ptr::NonNull;
 

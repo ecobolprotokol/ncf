@@ -1,7 +1,7 @@
 use memmap2::Mmap;
 use crate::prefetch::PrefetchReader;
 use ncf_core::header::{FileHeaderPrefix, NcfHeader};
-use ncf_core::index::{IndexEntry, NcfIndex};
+use ncf_core::index::IndexEntry;
 use ncf_core::schema::TensorSchema;
 use ncf_core::constants::*;
 use ncf_core::Result;
@@ -27,6 +27,7 @@ pub struct BorrowedNcfIndex<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
+/// Options controlling how an NCF reader is opened.
 pub struct ReaderOptions {
     /// Enable prefetching on the reader.
     pub prefetch: bool,
@@ -40,7 +41,9 @@ impl Default for ReaderOptions {
 
 /// A reader handle that can either use a direct NCF reader or a prefetch-aware reader.
 pub enum NcfReaderHandle {
+    /// A direct zero-copy reader.
     Direct(NcfReader),
+    /// A reader with background prefetch support.
     Prefetch(PrefetchReader),
 }
 
@@ -54,6 +57,7 @@ impl NcfReaderHandle {
         }
     }
 
+    /// Return the decoded file metadata.
     pub fn metadata(&self) -> &NcfHeader {
         match self {
             NcfReaderHandle::Direct(reader) => reader.metadata(),
@@ -61,6 +65,7 @@ impl NcfReaderHandle {
         }
     }
 
+    /// Return the tensor schema list.
     pub fn schemas(&self) -> Result<&[TensorSchema]> {
         match self {
             NcfReaderHandle::Direct(reader) => reader.schemas(),
@@ -68,6 +73,7 @@ impl NcfReaderHandle {
         }
     }
 
+    /// Return the parsed NCF header prefix.
     pub fn header_prefix(&self) -> FileHeaderPrefix {
         match self {
             NcfReaderHandle::Direct(reader) => reader.header_prefix(),
@@ -75,6 +81,7 @@ impl NcfReaderHandle {
         }
     }
 
+    /// Return a zero-copy slice of the named tensor payload, if available.
     pub fn tensor_slice(&self, name: &str) -> Option<&[u8]> {
         match self {
             NcfReaderHandle::Direct(reader) => reader.tensor_slice(name),
@@ -82,6 +89,7 @@ impl NcfReaderHandle {
         }
     }
 
+    /// Read the full tensor payload bytes.
     pub fn read_tensor(&self, name: &str) -> Result<Option<Vec<u8>>> {
         match self {
             NcfReaderHandle::Direct(reader) => reader.read_tensor(name),
@@ -89,6 +97,7 @@ impl NcfReaderHandle {
         }
     }
 
+    /// Inspect the loaded NCF file and print metadata information.
     pub fn inspect(&self) -> Result<()> {
         match self {
             NcfReaderHandle::Direct(reader) => reader.inspect(),
